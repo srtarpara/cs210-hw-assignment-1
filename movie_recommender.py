@@ -180,51 +180,76 @@ class MovieRecommender:
     
     def genre_popularity(self, n: int) -> List[Tuple[str, float]]:
         """
-        Get top n most popular genres based on average of average ratings.
-        
+        Get top n most popular genres based on average of average ratings of their movies.
+
         Args:
             n: Number of top genres to return
-            
+
         Returns:
-            List of tuples (genre, average_of_averages) sorted by rating descending
+            List of tuples (genre, average_rating)
         """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return []
-        
-        # TODO: Implement this function
-        # Steps:
-        # 1. Calculate average rating for each genre
-        # 2. Calculate average of averages for each genre
-        # 3. Sort by average rating (descending), then by genre name (ascending)
-        # 4. Return top n genres
-        
-        print("Function not yet implemented.")
-        return []
+
+        genre_ratings = defaultdict(list)
+
+        # For each movie that has ratings, group its average by genre
+        for movie_id, (movie_name, genre) in self.movies.items():
+            if movie_name in self.ratings:
+                avg_rating = self.calculate_average_rating(movie_name)
+                genre_ratings[genre].append(avg_rating)
+
+        # Compute average of averages per genre
+        genre_averages = []
+        for genre, ratings in genre_ratings.items():
+            if ratings:
+                avg_of_avg = sum(ratings) / len(ratings)
+                genre_averages.append((genre, avg_of_avg))
+
+        # Sort by descending average rating, then alphabetically
+        genre_averages.sort(key=lambda x: (-x[1], x[0]))
+
+        return genre_averages[:n]
+
     
     def user_preference_for_genre(self, user_id: int) -> Tuple[str, float]:
         """
-        Find the genre most preferred by a user based on average ratings.
-        
+        Determine which genre the user prefers most based on their average ratings.
+
         Args:
             user_id: ID of the user
-            
+
         Returns:
-            Tuple of (genre, average_rating) or (None, 0.0) if user has no ratings
+            (genre, average_rating) or (None, 0.0) if user has no ratings
         """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return (None, 0.0)
-        
-        # TODO: Implement this function
-        # Steps:
-        # 1. Get all movies rated by the user
-        # 2. Group ratings by genre
-        # 3. Calculate average rating per genre
-        # 4. Return the genre with highest average rating
-        
-        print("Function not yet implemented.")
-        return (None, 0.0)
+
+        if user_id not in self.user_ratings or not self.user_ratings[user_id]:
+            return (None, 0.0)
+
+        genre_ratings = defaultdict(list)
+
+        # For each movie the user rated, record their rating by genre
+        for movie_name, rating in self.user_ratings[user_id]:
+            movie_id = self.movie_name_to_id.get(movie_name)
+            if movie_id and movie_id in self.movies:
+                genre = self.movies[movie_id][1]
+                genre_ratings[genre].append(rating)
+
+        if not genre_ratings:
+            return (None, 0.0)
+
+        # Compute average rating per genre
+        genre_avg = {g: sum(r) / len(r) for g, r in genre_ratings.items()}
+
+        # Find top genre by average rating (ties → alphabetical order)
+        top_genre = max(genre_avg.items(), key=lambda x: (x[1], x[0]))
+
+        return top_genre
+
     
     def recommend_movies(self, user_id: int) -> List[str]:
         """
