@@ -265,15 +265,38 @@ class MovieRecommender:
             print("Error: Please load both movies and ratings files first.")
             return []
         
-        # TODO: Implement this function
-        # Steps:
-        # 1. Get user's top genre using user_preference_for_genre()
-        # 2. Get all movies in that genre that user hasn't rated
-        # 3. Sort by average rating (descending)
-        # 4. Return top 3 movies
-        
-        print("Function not yet implemented.")
-        return []
+        # Step 1: Get user's top genre
+        top_genre, _ = self.user_preference_for_genre(user_id)
+        if not top_genre:
+            print(f"User {user_id} has no preferred genre or no ratings.")
+            return []
+
+        # Step 2: Find all movies in that genre
+        genre_movies = [
+            (movie_name, self.calculate_average_rating(movie_name))
+            for movie_id, (movie_name, genre) in self.movies.items()
+            if genre == top_genre
+        ]
+
+        # Step 3: Get movies the user already rated
+        rated_movies = {movie_name for movie_name, _ in self.user_ratings[user_id]}
+
+        # Step 4: Filter out already-rated movies
+        unseen_movies = [
+            (movie_name, avg_rating)
+            for movie_name, avg_rating in genre_movies
+            if movie_name not in rated_movies
+        ]
+
+        if not unseen_movies:
+            print(f"No unseen movies to recommend in user's top genre ({top_genre}).")
+            return []
+
+        # Step 5: Sort unseen movies by average rating (descending)
+        unseen_movies.sort(key=lambda x: (-x[1], x[0]))
+
+        # Step 6: Return top 3 movie names
+        return [movie_name for movie_name, _ in unseen_movies[:3]]
 
 
 def print_menu():
