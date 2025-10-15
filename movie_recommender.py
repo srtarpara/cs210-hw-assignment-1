@@ -35,14 +35,14 @@ class MovieRecommender:
                         skipped_count += 1
                         continue
                     try:
-                        genre = parts[0]
-                        movie_id = int(parts[1])
-                        movie_name = parts[2]
+                        genre = parts[0].strip()
+                        movie_id = int(parts[1].strip())
+                        movie_name = parts[2].strip()
                     except ValueError:
                         skipped_count += 1
                         continue
                     self.movies[movie_id] = (movie_name, genre)
-                    self.movie_name_to_id[movie_name] = movie_id
+                    self.movie_name_to_id[movie_name.lower()] = movie_id
                     loaded_count += 1
 
             if loaded_count == 0:
@@ -87,7 +87,7 @@ class MovieRecommender:
                         skipped_count += 1
                         continue
 
-                    movie_name = parts[0].strip()
+                    movie_name = parts[0].strip().lower()
                     try:
                         rating = float(parts[1].strip())
                         user_id = int(parts[2].strip())
@@ -142,6 +142,7 @@ class MovieRecommender:
         Returns:
             Average rating, or 0.0 if no ratings
         """
+        movie_name = movie_name.lower()
         if movie_name not in self.ratings or not self.ratings[movie_name]:
             return 0.0
         ratings_list = [r[0] for r in self.ratings[movie_name]]
@@ -254,7 +255,7 @@ class MovieRecommender:
 
         # For each movie the user rated, record their rating by genre
         for movie_name, rating in self.user_ratings[user_id]:
-            movie_id = self.movie_name_to_id.get(movie_name)
+            movie_id = self.movie_name_to_id.get(movie_name.lower())
             if movie_id and movie_id in self.movies:
                 genre = self.movies[movie_id][1]
                 genre_ratings[genre].append(rating)
