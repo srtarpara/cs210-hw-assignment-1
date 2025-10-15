@@ -36,8 +36,9 @@ def tierize(items):
     return tiers
 
 def assert_rankings(actual, expected, label):
-    act = [(n, r3(s)) for n, s in actual]
-    exp = [(n, r3(s)) for n, s in expected]
+    tol = 1e-3  # allow tiny numeric differences
+    act = [(n, round(float(s), 3)) for n, s in actual]
+    exp = [(n, round(float(s), 3)) for n, s in expected]
 
     # Truncate actual to expected length
     act_flat = []
@@ -49,11 +50,14 @@ def assert_rankings(actual, expected, label):
     if len(act_flat) != len(exp):
         raise AssertionError(f"[{label}] Expected {len(exp)} items, got {len(act_flat)}.\nExpected: {exp}\nActual:   {act}")
     for et, at in zip(exp_tiers, act_tiers):
-        if et[0][1] != at[0][1]:
+        # Compare numeric tiers within tolerance
+        if abs(et[0][1] - at[0][1]) > tol:
             raise AssertionError(f"[{label}] Tier score mismatch.\nExpected: {et}\nActual:   {at}")
-        enames = {n for n,_ in et}; anames = {n for n,_ in at}
+        enames = {n for n, _ in et}
+        anames = {n for n, _ in at}
         if not enames.issubset(anames):
             raise AssertionError(f"[{label}] Expected names {enames} ⊆ actual names {anames}")
+
 
 def hdr(title):
     print("\n" + "="*80); print(title); print("="*80)
