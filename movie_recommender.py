@@ -63,44 +63,64 @@ class MovieRecommender:
     def load_ratings(self, filename: str) -> bool:
         """
         Load ratings from a file.
-        
-        Args:
-            filename: Path to the ratings file
-            
-        Returns:
-            True if successful, False otherwise
-            
+
         File format: movie_name|rating|user_id
+        - Keeps ALL valid ratings (including duplicates) so averages include them.
+        - Detects and reports duplicate (movie_name, user_id) pairs.
+        - Skips malformed lines (wrong columns or non-numeric rating/user_id).
+        - Prints a summary with: #movies covered, #ratings loaded, #duplicates detected, #malformed lines.
         """
         try:
-            loaded_count = 0
-            skipped_count = 0
+            loaded_count = 0          # number of valid ratings actually stored (duplicates included)
+            skipped_count = 0         # malformed lines
+            duplicate_count = 0       # times we saw a (movie_name, user_id) AFTER the first time
+            seen_pairs = set()        # tracks (movie_name, user_id) we've seen at least once
+
             with open(filename, "r", encoding="utf-8") as file:
-                for line in file:
-                    if not line.strip():
+                for raw in file:
+                    line = raw.strip()
+                    if not line:
                         continue
-                    parts = line.strip().split("|")
+
+                    parts = line.split("|")
                     if len(parts) != 3:
                         skipped_count += 1
                         continue
+
+                    movie_name = parts[0].strip()
                     try:
-                        movie_name = parts[0]
-                        rating = float(parts[1])
-                        user_id = int(parts[2])
+                        rating = float(parts[1].strip())
+                        user_id = int(parts[2].strip())
                     except ValueError:
                         skipped_count += 1
                         continue
+
+                    key = (movie_name, user_id)
+                    if key in seen_pairs:
+                        # Count duplicate but DO NOT skip: we still keep it so averages include it
+                        duplicate_count += 1
+                    else:
+                        seen_pairs.add(key)
+
+                    # Store rating (duplicates included)
                     self.ratings[movie_name].append((rating, user_id))
                     self.user_ratings[user_id].append((movie_name, rating))
                     loaded_count += 1
 
             if loaded_count == 0:
                 print("Warning: No valid rating entries found in the file.")
+
+            # Summary output
+            # Note: len(self.ratings) is number of distinct movies that received at least one rating line.
+            msg = f"Successfully loaded ratings for {len(self.ratings)} movies. ({loaded_count} rating(s) loaded"
+            msg += f"; {duplicate_count} duplicate rating(s) detected" if duplicate_count > 0 else ""
+            msg += ")"
+            print(msg)
+
             if skipped_count > 0:
                 print(f"Skipped {skipped_count} malformed rating line(s).")
 
             self.ratings_loaded = True
-            print(f"Successfully loaded ratings for {len(self.ratings)} movies.")
             return True
 
         except FileNotFoundError:
