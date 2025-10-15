@@ -261,42 +261,42 @@ class MovieRecommender:
         Returns:
             List of up to 3 recommended movie names
         """
+        # Ensure data is loaded
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return []
-        
-        # Step 1: Get user's top genre
+
+        # Determine user's preferred genre
         top_genre, _ = self.user_preference_for_genre(user_id)
         if not top_genre:
-            print(f"User {user_id} has no preferred genre or no ratings.")
+            # No ratings or nothing we can infer
             return []
 
-        # Step 2: Find all movies in that genre
-        genre_movies = [
-            (movie_name, self.calculate_average_rating(movie_name))
-            for movie_id, (movie_name, genre) in self.movies.items()
-            if genre == top_genre
-        ]
+        # Movies the user has already rated
+        rated_by_user = set(m for m, _ in self.user_ratings.get(user_id, []))
 
-        # Step 3: Get movies the user already rated
-        rated_movies = {movie_name for movie_name, _ in self.user_ratings[user_id]}
+        # Collect candidate movies: in user's top genre, have at least one rating, and not rated by user
+        candidates: List[Tuple[str, float]] = []
+        for movie_id, (movie_name, genre) in self.movies.items():
+            if genre != top_genre:
+               continue
+            if movie_name in rated_by_user:
+                continue
+            if movie_name not in self.ratings or not self.ratings[movie_name]:
+                # Skip unrated movies (popularity defined by average rating)
+                continue
+            avg_rating = self.calculate_average_rating(movie_name)
+            candidates.append((movie_name, avg_rating))
 
-        # Step 4: Filter out already-rated movies
-        unseen_movies = [
-            (movie_name, avg_rating)
-            for movie_name, avg_rating in genre_movies
-            if movie_name not in rated_movies
-        ]
-
-        if not unseen_movies:
-            print(f"No unseen movies to recommend in user's top genre ({top_genre}).")
+        if not candidates:
             return []
 
-        # Step 5: Sort unseen movies by average rating (descending)
-        unseen_movies.sort(key=lambda x: (-x[1], x[0]))
+        # Sort by average rating (desc), then movie name (asc) for deterministic ties
+        candidates.sort(key=lambda x: (-x[1], x[0]))
 
-        # Step 6: Return top 3 movie names
-        return [movie_name for movie_name, _ in unseen_movies[:3]]
+        # Return only the movie names, top 3
+        return [name for name, _ in candidates[:3]]
+
 
 
 def print_menu():
