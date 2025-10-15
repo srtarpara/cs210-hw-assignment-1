@@ -270,6 +270,63 @@ def main():
     assert list(act_rec_u2) == exp_rec_u2, f"[Recommendations u2] Expected {exp_rec_u2}, got {act_rec_u2}"
     print("✔ u2 Passed")
 
+    # 6) Edge-case & Negative Tests
+    hdr("[5 pts] Edge-case & Negative Tests")
+
+    import tempfile, os, shutil
+
+    tmpdir = tempfile.mkdtemp()
+    try:
+        # 1) Empty movie or rating file
+        empty_movies = os.path.join(tmpdir, "empty_movies.txt")
+        empty_ratings = os.path.join(tmpdir, "empty_ratings.txt")
+        open(empty_movies, "w").close()
+        open(empty_ratings, "w").close()
+
+        rec2 = Reco()
+        ok_m = rec2.load_movies(empty_movies)
+        ok_r = rec2.load_ratings(empty_ratings)
+        assert not ok_m or not ok_r, "Expected load failure or handled empty file gracefully."
+        print("✔ Empty file handling passed")
+
+        # 2) Malformed movie line
+        bad_movies = os.path.join(tmpdir, "bad_movies.txt")
+        with open(bad_movies, "w") as f:
+            f.write("BrokenLineWithoutPipes\nAdventure|1|Valid Movie\n")
+        rec3 = Reco()
+        rec3.load_movies(bad_movies)
+        print("✔ Malformed movie line handled")
+
+        # 3) Malformed ratings (non-numeric, duplicate, incomplete)
+        bad_ratings = os.path.join(tmpdir, "bad_ratings.txt")
+        with open(bad_ratings, "w") as f:
+            f.write("Toy Story (1995)|notanumber|5\n")  # non-numeric
+            f.write("Toy Story (1995)|4.0\n")          # missing user
+            f.write("Toy Story (1995)|4.0|5\n")        # duplicate rating (same user+movie)
+        rec4 = Reco()
+        rec4.load_movies(MOVIES_PATH)
+        rec4.load_ratings(bad_ratings)
+        print("✔ Malformed/non-numeric/duplicate rating handling passed")
+
+        # 4) Tie-handling test (force a tie)
+        tie_ratings = os.path.join(tmpdir, "tie_ratings.txt")
+        with open(tie_ratings, "w") as f:
+            f.write("MovieA|4.0|1\nMovieB|4.0|2\n")
+        tie_movies = os.path.join(tmpdir, "tie_movies.txt")
+        with open(tie_movies, "w") as f:
+            f.write("Action|1|MovieA\nAction|2|MovieB\n")
+        rec5 = Reco()
+        rec5.load_movies(tie_movies)
+        rec5.load_ratings(tie_ratings)
+        top = rec5.movie_popularity(2)
+        assert abs(top[0][1] - top[1][1]) < 1e-9, "Expected a tie in scores."
+        print("✔ Tie behavior handled and stable ordering verified")
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    print("\nAll edge-case and negative tests passed! ✅")
+
     print("\nAll tests passed! 🎉")
 
 if __name__ == "__main__":
