@@ -278,6 +278,7 @@ def main():
     tmpdir = tempfile.mkdtemp()
     try:
         # 1) Empty movie or rating file
+                # 1) Empty movie or rating file
         empty_movies = os.path.join(tmpdir, "empty_movies.txt")
         empty_ratings = os.path.join(tmpdir, "empty_ratings.txt")
         open(empty_movies, "w").close()
@@ -286,8 +287,26 @@ def main():
         rec2 = Reco()
         ok_m = rec2.load_movies(empty_movies)
         ok_r = rec2.load_ratings(empty_ratings)
-        assert not ok_m or not ok_r, "Expected load failure or handled empty file gracefully."
-        print("✔ Empty file handling passed")
+
+        if not ok_m or not ok_r:
+            # Some implementations choose to return False for empty inputs.
+            print("✔ Empty file handling: loaders returned False as expected")
+        else:
+            # Your implementation returns True but with empty datasets.
+            # Verify downstream functions behave gracefully (return empty & do not crash).
+            pop = rec2.movie_popularity(3)
+            pop_comedy = rec2.movie_popularity_in_genre("Comedy", 2)
+            genres = rec2.genre_popularity(2)
+            pref = rec2.user_preference_for_genre(1)
+            recs = rec2.recommend_movies(1)
+
+            assert pop == [], "Expected empty top movies on empty datasets."
+            assert pop_comedy == [], "Expected empty top movies by genre on empty datasets."
+            assert genres == [], "Expected empty top genres on empty datasets."
+            assert pref == (None, 0.0), "Expected (None, 0.0) user preference on empty datasets."
+            assert recs == [], "Expected empty recommendations on empty datasets."
+            print("✔ Empty file handling: successful load but empty computations verified")
+
 
         # 2) Malformed movie line
         bad_movies = os.path.join(tmpdir, "bad_movies.txt")
