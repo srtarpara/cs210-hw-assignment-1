@@ -1,23 +1,13 @@
 #!/usr/bin/env python3
 """
-test_movie_recommender.py — fixed to always use local files:
-  - movie_files.txt
-  - rating_file.txt
+test_movie_recommender.py — uses local files:
+  - MOVIES_PATH
+  - RATINGS_PATH
 
-Run:
-    python test_movie_recommender.py
-
-What it does:
-- Dynamically finds your recommender (tries common module names or env MODULE override).
-- Expects a class MovieRecommender with the methods defined in your code.
-- Loads the two local files, computes expected results from them (case-robust, using
-  the movies file as ground truth for display names), calls each method, prints
-  expected vs actual, and asserts correctness (tie-aware).
-
-If the files are missing or cannot be parsed by your implementation, the script exits
-with a clear error message.
+Main tests use your provided files.
+Edge cases are DERIVED FROM your provided movies/ratings files (no hardcoded titles).
 """
-import importlib, sys
+import importlib, sys, io, contextlib
 
 # ------------------------ Config: fixed filenames ------------------------
 MOVIES_PATH  = "movie_file_8.txt"
@@ -68,21 +58,12 @@ def hdr(title):
 def subhdr(title):
     print("\n" + "-"*80); print(title); print("-"*80)
 
-def preview_file(path, max_lines=6):
-    """Print a short preview of a file's contents (first few lines)."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = [ln.rstrip("\n") for ln in f.readlines()]
-    except Exception as e:
-        print(f"[preview] Could not read {path}: {e}")
-        return
-    total = len(lines)
-    show = lines[:max_lines]
-    print(f"[preview] {path}  (lines: {total}, showing first {len(show)})")
-    for i, ln in enumerate(show, 1):
-        print(f"  {i:>3}: {ln}")
-    if total > len(show):
-        print(f"  ... ({total - len(show)} more lines)")
+@contextlib.contextmanager
+def quiet_stdout():
+    """Silence noisy loader prints inside edge-case setup."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        yield
 
 # ------------------------ Expected results (computed from files) ------------------------
 def parse_movies_map(text):
@@ -90,25 +71,31 @@ def parse_movies_map(text):
     Returns:
       name_to_genre: {display_name -> genre}
       canon_to_display: {name.casefold() -> display_name}
+      valid_movie_rows: list of raw valid movie rows (genre|id|name)
     """
     name_to_genre = {}
     canon_to_display = {}
+    valid_movie_rows = []
     for raw in text.strip().splitlines():
         line = raw.strip()
         if not line:
             continue
-        parts = line.split("|", 2)
+        parts = line.split("|", 3)
         if len(parts) != 3:
             continue
         g, _id, name = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        # Ensure id is int-ish
+        try:
+            int(_id)
+        except:
+            continue
         name_to_genre[name] = g
         canon_to_display[name.casefold()] = name
-    return name_to_genre, canon_to_display
+        valid_movie_rows.append((g, _id, name))
+    return name_to_genre, canon_to_display, valid_movie_rows
 
 def movie_avgs_from(text, canon_to_display):
-    """
-    Build {display_name -> avg_rating} using movies' display names for case-robustness.
-    """
+    """Build {display_name -> avg_rating} using movies' display names for case-robustness."""
     from collections import defaultdict
     sums, cnts = defaultdict(float), defaultdict(int)
     for raw in text.strip().splitlines():
@@ -123,7 +110,7 @@ def movie_avgs_from(text, canon_to_display):
             r = float(r)
         except:
             continue
-        name = canon_to_display.get(raw_name.casefold(), raw_name)  # fold to movies' display name
+        name = canon_to_display.get(raw_name.casefold(), raw_name)
         sums[name] += r; cnts[name] += 1
     return {name: (sums[name] / cnts[name]) for name in sums}
 
@@ -152,9 +139,7 @@ def expected_top_genres(genre_avgs, n):
     return items[:n]
 
 def expected_user_top_genres(user_id, name_to_genre, ratings_text, canon_to_display):
-    """
-    Return a list of genre names that tie for the user's top average (case-robust).
-    """
+    """Return a list of genre names that tie for the user's top average (case-robust)."""
     from collections import defaultdict
     sums, cnts = defaultdict(float), defaultdict(int)
     for raw in ratings_text.strip().splitlines():
@@ -250,9 +235,18 @@ def main():
         sys.exit(1)
 
     # Build maps (case-robust expected calculations)
-    name_to_genre, canon_to_display = parse_movies_map(movies_text)
+    name_to_genre, canon_to_display, valid_movie_rows = parse_movies_map(movies_text)
     movie_avgs = movie_avgs_from(ratings_text, canon_to_display)
     genre_avgs = genre_aoa_from(movie_avgs, name_to_genre)
+
+    # Fallbacks for sampling
+    if not valid_movie_rows:
+        print("ERROR: No valid movie rows found in your movies file.")
+        sys.exit(1)
+
+    # Choose sample movies from your provided file for EC-2..EC-4
+    sample_movie_1 = valid_movie_rows[0]  # (genre, id, name)
+    sample_movie_2 = valid_movie_rows[1] if len(valid_movie_rows) > 1 else valid_movie_rows[0]
 
     Reco = get_recommender_class()
     rec = Reco()
@@ -315,117 +309,109 @@ def main():
     assert list(act_rec_u2) == exp_rec_u2, f"[Recommendations u2] Expected {exp_rec_u2}, got {act_rec_u2}"
     print("✔ u2 Passed")
 
-    # 6) Edge-case & Negative Tests (detailed)
-    hdr("[5 pts] Edge-case & Negative Tests — detailed report")
+    # 6) Edge-case & Negative Tests — concise verdicts (derived from your files)
+    hdr("[5 pts] Edge-case & Negative Tests — concise verdicts (derived)")
 
     import tempfile, os, shutil
 
     tmpdir = tempfile.mkdtemp()
     try:
-        # 1) Empty movie or rating file
+        # EC-1: Empty files (still synthetic but independent of your data)
         subhdr("EC-1: Empty files")
         empty_movies = os.path.join(tmpdir, "empty_movies.txt")
         empty_ratings = os.path.join(tmpdir, "empty_ratings.txt")
         open(empty_movies, "w").close()
         open(empty_ratings, "w").close()
 
-        print("What this tests:")
-        print("  - Loaders should handle empty inputs gracefully.")
-        print("Expected behavior:")
-        print("  - Loader may return False OR True with empty internal state.")
-        print("  - All compute functions should return empty defaults ([], (None, 0.0)).")
-        preview_file(empty_movies)
-        preview_file(empty_ratings)
+        with quiet_stdout():
+            rec2 = Reco()
+            ok_m2 = rec2.load_movies(empty_movies)
+            ok_r2 = rec2.load_ratings(empty_ratings)
 
-        rec2 = Reco()
-        ok_m = rec2.load_movies(empty_movies)
-        ok_r = rec2.load_ratings(empty_ratings)
-
-        if not ok_m or not ok_r:
-            print("✔ Result: loaders returned False (acceptable for empty inputs).")
+        if not ok_m2 or not ok_r2:
+            print("Result: loaders indicated empty input -> PASS")
         else:
             pop = rec2.movie_popularity(3)
             pop_comedy = rec2.movie_popularity_in_genre("Comedy", 2)
             genres = rec2.genre_popularity(2)
             pref = rec2.user_preference_for_genre(1)
             recs = rec2.recommend_movies(1)
-            print("Actual computed values:", {"movie_popularity": pop, "comedy_top2": pop_comedy,
-                                              "top_genres": genres, "user1_pref": pref, "recs_u1": recs})
-            assert pop == [], "Expected empty top movies on empty datasets."
-            assert pop_comedy == [], "Expected empty top movies by genre on empty datasets."
-            assert genres == [], "Expected empty top genres on empty datasets."
-            assert pref == (None, 0.0), "Expected (None, 0.0) user preference on empty datasets."
-            assert recs == [], "Expected empty recommendations on empty datasets."
-            print("✔ Result: loaders returned True; computations produced empty defaults.")
+            assert pop == [] and pop_comedy == [] and genres == [] and pref == (None, 0.0) and recs == []
+            print("Result: empty inputs handled with empty outputs -> PASS")
 
-        # 2) Malformed movie line(s)
+        # EC-2: Malformed movie lines (mix bad + a valid row from your MOVIES_PATH)
         subhdr("EC-2: Malformed movie lines")
+        # Build a small movies file using one valid row sampled from your file
+        g1, id1, name1 = sample_movie_1
         bad_movies = os.path.join(tmpdir, "bad_movies.txt")
-        with open(bad_movies, "w") as f:
+        with open(bad_movies, "w", encoding="utf-8") as f:
             f.write("BrokenLineWithoutPipes\n")          # malformed
-            f.write("Adventure|1|Valid Movie\n")         # valid
-            f.write("Action|abc|BadID\n")                # malformed numeric id
-            f.write("Horror|2|Valid Two|EXTRA\n")        # extra field -> malformed
-            f.write("\n")                                # blank
-        print("What this tests:")
-        print("  - Loader should skip malformed movie rows and keep valid ones.")
-        print("Expected:")
-        print("  - At least 1 valid movie loaded ('Valid Movie'); malformed lines skipped.")
-        preview_file(bad_movies)
+            f.write(f"{g1}|{id1}|{name1}\n")            # valid (from your file)
+            f.write("Action|abc|BadID\n")               # malformed numeric id
+            f.write("Horror|2|Valid Two|EXTRA\n")       # extra field -> malformed
+            f.write("\n")                               # blank
 
-        rec3 = Reco()
-        rec3.load_movies(bad_movies)
-        # We don't assert exact counts since loader prints its own summary, but we expect no crash.
-        print("✔ Result: malformed movie lines handled and at least one valid entry retained.")
+        with quiet_stdout():
+            rec3 = Reco()
+            rec3.load_movies(bad_movies)
 
-        # 3) Malformed ratings / non-numeric / duplicate
+        # We expect the sampled valid movie to be present
+        handled = any(name1 == t[0] for t in rec3.movies.values())
+        assert handled
+        print("Result: malformed movie rows skipped; valid retained -> PASS")
+
+        # EC-3: Malformed ratings & duplicates (use a real movie title from your file)
         subhdr("EC-3: Malformed ratings & duplicates")
+        # Use the sampled movie name from your MOVIES_PATH
+        title = name1  # e.g., "Some Movie (Year)"
+
         bad_ratings = os.path.join(tmpdir, "bad_ratings.txt")
-        with open(bad_ratings, "w") as f:
-            f.write("Toy Story (1995)|notanumber|5\n")   # non-numeric rating -> skip
-            f.write("Toy Story (1995)|4.0\n")           # missing user id -> skip
-            f.write("Toy Story (1995)|4.0|5\n")         # first rating for (movie,user)
-            f.write("Toy Story (1995)|4.5|5\n")         # duplicate for (movie,user)
-        print("What this tests:")
-        print("  - Ratings loader should skip malformed rows, keep valid rows,")
-        print("    detect duplicates (same movie + same user), and include duplicates in averages if desired.")
-        print("Expected:")
-        print("  - 2 malformed skipped, 2 valid stored, 1 duplicate detected (but kept).")
-        preview_file(bad_ratings)
+        with open(bad_ratings, "w", encoding="utf-8") as f:
+            f.write(f"{title}|notanumber|5\n")  # non-numeric rating -> skip
+            f.write(f"{title}|4.0\n")           # missing user id -> skip
+            f.write(f"{title}|4.0|5\n")         # first rating for (movie,user)
+            f.write(f"{title}|4.5|5\n")         # duplicate for (movie,user)
 
-        rec4 = Reco()
-        rec4.load_movies(MOVIES_PATH)  # need movie map for display normalization
-        rec4.load_ratings(bad_ratings)
-        # Verify popularity math on this tiny set
+        # Load YOUR full movies file to stay faithful to your request
+        with quiet_stdout():
+            rec4 = Reco()
+            rec4.load_movies(MOVIES_PATH)
+            rec4.load_ratings(bad_ratings)
+
+        # Verify we stored exactly two rating lines overall for this tiny set
+        total_stored = sum(len(v) for v in rec4.ratings.values())
+        assert total_stored == 2, f"Expected 2 stored ratings, found {total_stored}"
+
+        # Verify popularity math via public API
         top = rec4.movie_popularity(1)
-        print("Actual top movie from EC-3 tiny set:", top)
-        # Average should be (4.0 + 4.5)/2 = 4.25
-        if top:
-            assert abs(top[0][1] - 4.25) < 1e-9, f"Expected avg 4.25 for Toy Story (1995), got {top[0][1]}"
-        print("✔ Result: malformed/non-numeric/duplicate rating handling passed and average correct.")
+        assert top and top[0][0].casefold() == title.casefold(), f"Top movie should be {title}"
+        assert abs(top[0][1] - 4.25) < 1e-9, f"Expected avg 4.25, got {top[0][1]}"
+        print("Result: malformed skipped; duplicate kept & averaged (avg=4.25) -> PASS")
 
-        # 4) Tie-handling (forced tie at 4.0)
+        # EC-4: Tie behavior — pick two real titles from your file and force a tie
         subhdr("EC-4: Tie behavior")
-        tie_ratings = os.path.join(tmpdir, "tie_ratings.txt")
-        with open(tie_ratings, "w") as f:
-            f.write("MovieA|4.0|1\nMovieB|4.0|2\n")
+        gA, idA, nameA = sample_movie_1
+        gB, idB, nameB = sample_movie_2
+        # Build a tiny movies file preserving their genres
         tie_movies = os.path.join(tmpdir, "tie_movies.txt")
-        with open(tie_movies, "w") as f:
-            f.write("Action|1|MovieA\nAction|2|MovieB\n")
-        print("What this tests:")
-        print("  - When two movies have identical averages, they should tie.")
-        print("Expected:")
-        print("  - movie_popularity(2) returns two entries with the same score (4.0),")
-        print("    and your implementation's stable tiebreak (alphabetical ascending by name).")
-        preview_file(tie_movies); preview_file(tie_ratings)
+        with open(tie_movies, "w", encoding="utf-8") as f:
+            f.write(f"{gA}|1|{nameA}\n")
+            f.write(f"{gB}|2|{nameB}\n")
+        # Ratings force an average tie at 4.0
+        tie_ratings = os.path.join(tmpdir, "tie_ratings.txt")
+        with open(tie_ratings, "w", encoding="utf-8") as f:
+            f.write(f"{nameA}|4.0|1\n")
+            f.write(f"{nameB}|4.0|2\n")
 
-        rec5 = Reco()
-        rec5.load_movies(tie_movies)
-        rec5.load_ratings(tie_ratings)
-        top = rec5.movie_popularity(2)
-        print("Actual top-2 from tie case:", top)
-        assert abs(top[0][1] - top[1][1]) < 1e-9, "Expected a tie in scores."
-        print("✔ Result: tie behavior verified with stable ordering.")
+        with quiet_stdout():
+            rec5 = Reco()
+            rec5.load_movies(tie_movies)
+            rec5.load_ratings(tie_ratings)
+
+        top2 = rec5.movie_popularity(2)
+        assert abs(top2[0][1] - top2[1][1]) < 1e-9  # identical scores
+        assert [n for n, _ in top2] == sorted([n for n, _ in top2])  # alphabetical tiebreak
+        print("Result: equal averages with alphabetical tiebreak -> PASS")
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
