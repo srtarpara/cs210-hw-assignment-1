@@ -19,8 +19,8 @@ with a clear error message.
 import importlib, sys
 
 # ------------------------ Config: fixed filenames ------------------------
-MOVIES_PATH  = "movie_file.txt"
-RATINGS_PATH = "rating_file.txt"
+MOVIES_PATH  = "movie_file_1.txt"
+RATINGS_PATH = "rating_file_1.txt"
 
 # ------------------------ Utilities ------------------------
 def r3(x): 
