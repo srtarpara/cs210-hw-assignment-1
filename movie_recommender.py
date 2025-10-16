@@ -239,35 +239,35 @@ class MovieRecommender:
         return genre_averages[:n]
 
     def user_preference_for_genre(self, user_id: int) -> Tuple[str, float]:
-        """
-        Determine the user's preferred genre (highest avg rating);
-        on ties, pick alphabetically higher genre (as per your original logic).
-        """
+        """Return the user's most preferred genre based on their average ratings."""
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return (None, 0.0)
 
-        if user_id not in self.user_ratings or not self.user_ratings[user_id]:
-            return (None, 0.0)
-
+        from collections import defaultdict
         genre_ratings = defaultdict(list)
 
-        # For each movie the user rated (we stored display names), look up its genre
-        for movie_name_display, rating in self.user_ratings[user_id]:
-            movie_id = self.movie_name_to_id.get(self._canon(movie_name_display))
-            if movie_id and movie_id in self.movies:
+        # 1. Collect this user's ratings by genre
+        for movie_name, rating in self.user_ratings[user_id]:
+            if movie_name in self.movie_name_to_id:
+                movie_id = self.movie_name_to_id[movie_name]
                 genre = self.movies[movie_id][1]
                 genre_ratings[genre].append(rating)
 
         if not genre_ratings:
             return (None, 0.0)
 
-        # Compute average rating per genre
-        genre_avg = {g: sum(r) / len(r) for g, r in genre_ratings.items()}
+        # 2. Compute average rating per genre
+        genre_averages = {
+            genre: sum(ratings) / len(ratings)
+            for genre, ratings in genre_ratings.items()
+        }
 
-        # Find top genre by average rating (ties → alphabetical order)
-        top_genre = max(genre_avg.items(), key=lambda x: (x[1], x[0]))
+        # 3. Select the top-rated genre (break ties alphabetically)
+        top_genre = max(genre_averages.items(), key=lambda x: (x[1], x[0]))
+
         return top_genre
+
 
     def recommend_movies(self, user_id: int) -> List[str]:
         """
