@@ -247,23 +247,24 @@ class MovieRecommender:
         from collections import defaultdict
         genre_ratings = defaultdict(list)
 
-        # 1. Collect this user's ratings by genre
-        for movie_name, rating in self.user_ratings[user_id]:
-            if movie_name in self.movie_name_to_id:
-                movie_id = self.movie_name_to_id[movie_name]
+        # Collect this user's ratings by genre
+        for movie_name, rating in self.user_ratings.get(user_id, []):
+            c = self._canon(movie_name)
+            movie_id = self.movie_name_to_id.get(c)
+            if movie_id and movie_id in self.movies:
                 genre = self.movies[movie_id][1]
                 genre_ratings[genre].append(rating)
 
         if not genre_ratings:
             return (None, 0.0)
 
-        # 2. Compute average rating per genre
+        # Compute average rating per genre
         genre_averages = {
             genre: sum(ratings) / len(ratings)
             for genre, ratings in genre_ratings.items()
         }
 
-        # 3. Select the top-rated genre (break ties alphabetically)
+        # Select the top-rated genre (break ties alphabetically)
         top_genre = max(genre_averages.items(), key=lambda x: (x[1], x[0]))
 
         return top_genre
