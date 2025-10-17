@@ -9,9 +9,20 @@ Edge cases are DERIVED FROM your provided movies/ratings files (no hardcoded tit
 """
 import importlib, sys, io, contextlib
 
-# ------------------------ Config: fixed filenames ------------------------
-MOVIES_PATH  = "movie_file_8.txt"
-RATINGS_PATH = "rating_file_8.txt"
+# ------------------------ Config: prompt user for filenames ------------------------
+def prompt_path(prompt_text, default):
+    """Ask user for a file path, falling back to default if left blank."""
+    import os
+    p = input(f"{prompt_text} (default: {default}): ").strip()
+    if not p:
+        p = default
+    if not os.path.exists(p):
+        print(f"ERROR: File not found: {p}")
+        sys.exit(1)
+    return p
+
+MOVIES_PATH  = prompt_path("Enter path to your movie file", "movie_file.txt")
+RATINGS_PATH = prompt_path("Enter path to your rating file", "rating_file.txt")
 
 # ------------------------ Utilities ------------------------
 def r3(x):

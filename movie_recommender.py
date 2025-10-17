@@ -13,12 +13,14 @@ class MovieRecommender:
 
     def __init__(self):
         """Initialize the MovieRecommender with empty data structures."""
-        # movie_id -> (movie_name (display), genre)
+        # movie_id -> (movie_name (display), genre (as given))
         self.movies = {}
         # canonical movie name -> movie_id  (canonical = casefolded)
         self.movie_name_to_id = {}
         # canonical movie name -> original display movie_name
         self.name_display = {}
+        # canonical genre -> original display genre (first seen)
+        self.genre_display = {}
         # ratings stored under DISPLAY movie_name: movie_name(display) -> [(rating, user_id)]
         self.ratings = defaultdict(list)
         # user_id -> [(movie_name(display), rating)]
@@ -36,6 +38,11 @@ class MovieRecommender:
         """Return the display/canonical movie name we should use for storage/output."""
         c = self._canon(movie_name_raw)
         return self.name_display.get(c, movie_name_raw.strip())
+
+    def _display_genre(self, genre_raw: str) -> str:
+        """Return a nice display version for a genre (fallback to input)."""
+        cg = self._canon(genre_raw)
+        return self.genre_display.get(cg, genre_raw.strip())
 
     # ---------- loaders ----------
 
@@ -67,6 +74,11 @@ class MovieRecommender:
                     c = self._canon(movie_name)
                     self.movie_name_to_id[c] = movie_id
                     self.name_display[c] = movie_name
+
+                    # remember a display form for this genre (first seen)
+                    gc = self._canon(genre)
+                    if gc and gc not in self.genre_display:
+                        self.genre_display[gc] = genre
 
                     loaded_count += 1
 
@@ -194,14 +206,16 @@ class MovieRecommender:
     def movie_popularity_in_genre(self, genre: str, n: int) -> List[Tuple[str, float]]:
         """
         Top n movies in a genre by average rating (desc), ties by name asc.
+        Case-insensitive genre matching.
         """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return []
 
+        genre_canon = self._canon(genre)
         genre_movies = []
         for movie_id, (movie_name_display, movie_genre) in self.movies.items():
-            if movie_genre != genre:
+            if self._canon(movie_genre) != genre_canon:
                 continue
             # only include if we actually have ratings for it (by display name)
             if movie_name_display in self.ratings:
@@ -214,6 +228,7 @@ class MovieRecommender:
     def genre_popularity(self, n: int) -> List[Tuple[str, float]]:
         """
         Top n genres ranked by the average of average ratings of movies in the genre.
+        Case-insensitive grouping with pretty display names.
         """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
@@ -221,25 +236,29 @@ class MovieRecommender:
 
         genre_ratings = defaultdict(list)
 
-        # For each movie that has ratings, group its average by genre
+        # For each movie that has ratings, group its average by canonical genre
         for movie_id, (movie_name_display, genre) in self.movies.items():
             if movie_name_display in self.ratings:
                 avg_rating = self.calculate_average_rating(movie_name_display)
-                genre_ratings[genre].append(avg_rating)
+                cgenre = self._canon(genre)
+                genre_ratings[cgenre].append(avg_rating)
 
-        # Compute average of averages per genre
+        # Compute average of averages per canonical genre; display with nice casing
         genre_averages = []
-        for genre, ratings in genre_ratings.items():
+        for cgenre, ratings in genre_ratings.items():
             if ratings:
                 avg_of_avg = sum(ratings) / len(ratings)
-                genre_averages.append((genre, avg_of_avg))
+                display = self.genre_display.get(cgenre, cgenre)
+                genre_averages.append((display, avg_of_avg))
 
         # Sort by descending average rating, then alphabetically
         genre_averages.sort(key=lambda x: (-x[1], x[0]))
         return genre_averages[:n]
 
     def user_preference_for_genre(self, user_id: int) -> Tuple[str, float]:
-        """Return the user's most preferred genre based on their average ratings."""
+        """Return the user's most preferred genre based on their average ratings.
+        Case-insensitive aggregation with pretty display name.
+        """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
             return (None, 0.0)
@@ -247,32 +266,40 @@ class MovieRecommender:
         from collections import defaultdict
         genre_ratings = defaultdict(list)
 
-        # Collect this user's ratings by genre
+        # Collect this user's ratings by canonical genre
         for movie_name, rating in self.user_ratings.get(user_id, []):
             c = self._canon(movie_name)
             movie_id = self.movie_name_to_id.get(c)
             if movie_id and movie_id in self.movies:
-                genre = self.movies[movie_id][1]
-                genre_ratings[genre].append(rating)
+                raw_genre = self.movies[movie_id][1]
+                cgenre = self._canon(raw_genre)
+                genre_ratings[cgenre].append(rating)
 
         if not genre_ratings:
             return (None, 0.0)
 
-        # Compute average rating per genre
+        # Compute average rating per canonical genre
         genre_averages = {
-            genre: sum(ratings) / len(ratings)
-            for genre, ratings in genre_ratings.items()
+            cgenre: sum(ratings) / len(ratings)
+            for cgenre, ratings in genre_ratings.items()
         }
 
-        # Select the top-rated genre (break ties alphabetically)
-        top_genre = max(genre_averages.items(), key=lambda x: (x[1], x[0]))
+        # Helper to get a pretty display string
+        def disp(cg: str) -> str:
+            return self.genre_display.get(cg, cg)
 
-        return top_genre
+        # Select the top-rated genre (tie-break by display string alphabetically)
+        top_cgenre, top_avg = max(
+            genre_averages.items(),
+            key=lambda x: (x[1], disp(x[0]))
+        )
 
+        return (disp(top_cgenre), top_avg)
 
     def recommend_movies(self, user_id: int) -> List[str]:
         """
         Recommend 3 most popular movies from user's top genre that they haven't rated.
+        Genre comparisons are case-insensitive.
         """
         if not self.movies_loaded or not self.ratings_loaded:
             print("Error: Please load both movies and ratings files first.")
@@ -285,10 +312,13 @@ class MovieRecommender:
         # Movies already rated by the user (display names)
         rated_by_user = set(m for m, _ in self.user_ratings.get(user_id, []))
 
+        # Compare by canonical genre
+        target_cg = self._canon(top_genre)
+
         # Candidates in the genre, rated by someone, and unseen by this user
         candidates: List[Tuple[str, float]] = []
         for movie_id, (movie_name_display, genre) in self.movies.items():
-            if genre != top_genre:
+            if self._canon(genre) != target_cg:
                 continue
             if movie_name_display in rated_by_user:
                 continue
@@ -304,7 +334,7 @@ class MovieRecommender:
         return [name for name, _ in candidates[:3]]
 
 
-# ---------------- CLI below (unchanged) ----------------
+# ---------------- CLI below (unchanged except nicer genre display) ----------------
 
 def print_menu():
     """Print the main menu."""
@@ -356,17 +386,20 @@ def main():
             if not recommender.movies_loaded or not recommender.ratings_loaded:
                 print("Please load both movies and ratings files first.")
                 continue
-            genre = input("Enter genre: ").strip()
+            genre_input = input("Enter genre: ").strip()
             try:
                 n = int(input("Enter number of top movies to display: ").strip())
-                results = recommender.movie_popularity_in_genre(genre, n)
+                results = recommender.movie_popularity_in_genre(genre_input, n)
                 if results:
-                    print(f"\nTop {n} Most Popular Movies in '{genre}':")
+                    # Pretty display of the genre name
+                    genre_canon = recommender._canon(genre_input)
+                    nice_genre = recommender.genre_display.get(genre_canon, genre_input)
+                    print(f"\nTop {n} Most Popular Movies in '{nice_genre}':")
                     print("-" * 60)
                     for i, (movie_name, avg_rating) in enumerate(results, 1):
                         print(f"{i}. {movie_name} - Average Rating: {avg_rating:.2f}")
                 else:
-                    print(f"No movies found in genre '{genre}' or no ratings available.")
+                    print(f"No movies found in genre '{genre_input}' or no ratings available.")
             except ValueError:
                 print("Invalid input. Please enter a number.")
 
